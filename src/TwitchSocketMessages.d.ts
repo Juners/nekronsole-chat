@@ -16,13 +16,18 @@ interface Message {
      */
     message_id: string;
     /** The type of message */
-    message_type: string;
+    message_type:
+      | "session_welcome"
+      | "session_keepalive"
+      | "notification"
+      | "session_reconnect"
+      | "revocation";
     /** The UTC date and time that the message was sent. */
     message_timestamp: string;
   };
 
   /** An empty object. */
-  payload: {};
+  payload: object;
 }
 
 /**
@@ -37,19 +42,22 @@ interface WelcomeMessage extends Message {
 
   /** An object that contains the message. */
   payload: {
-    /** An ID that uniquely identifies this WebSocket connection.
-     * Use this ID to set the session_id field in all {@link https://dev.twitch.tv/docs/eventsub/manage-subscriptions/#subscribing-to-events subscription requests.} */
-    id: string;
-    /** The connection’s status, which is set to connected. */
-    status: "connected";
-    /** The maximum number of seconds that you should expect silence before receiving a {@link KeepaliveMessage keepalive message}.
-     * For a welcome message, this is the number of seconds that you have to {@link https://dev.twitch.tv/docs/eventsub/manage-subscriptions/#subscribing-to-events subscribe to an event} after receiving the welcome message.
-     * If you don’t subscribe to an event within this window, the socket is disconnected. */
-    keepalive_timeout_seconds: string;
-    /** The URL to reconnect to if you get a Reconnect message. Is set to null. */
-    reconnect_url: null;
-    /** The UTC date and time that the connection was created. */
-    connected_at: string;
+    /** An object that contains information about the connection. */
+    session: {
+      /** An ID that uniquely identifies this WebSocket connection.
+       * Use this ID to set the session_id field in all {@link https://dev.twitch.tv/docs/eventsub/manage-subscriptions/#subscribing-to-events subscription requests.} */
+      id: string;
+      /** The connection’s status, which is set to connected. */
+      status: "connected";
+      /** The maximum number of seconds that you should expect silence before receiving a {@link KeepaliveMessage keepalive message}.
+       * For a welcome message, this is the number of seconds that you have to {@link https://dev.twitch.tv/docs/eventsub/manage-subscriptions/#subscribing-to-events subscribe to an event} after receiving the welcome message.
+       * If you don’t subscribe to an event within this window, the socket is disconnected. */
+      keepalive_timeout_seconds: string;
+      /** The URL to reconnect to if you get a Reconnect message. Is set to null. */
+      reconnect_url: null;
+      /** The UTC date and time that the connection was created. */
+      connected_at: string;
+    };
   };
 }
 
@@ -68,6 +76,7 @@ interface KeepaliveMessage extends Message {
  * NOT DEFINED YET
  * {@link https://dev.twitch.tv/docs/eventsub/websocket-reference/#ping-message}
  */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface PingMessage {
   // TODO
 }
@@ -90,6 +99,8 @@ interface NotificationMessage extends Message {
   payload: {
     /** An object that contains information about your subscription. */
     subscription: SubscriptionInfo;
+    /** The event’s data. For information about the event’s data, see the subscription type’s description in {@link https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/ Subscription Types}. */
+    event: object;
   } & Message["payload"];
 }
 
@@ -119,8 +130,6 @@ interface SubscriptionInfo {
   };
   /** The UTC date and time that the subscription was created. */
   created_at: string;
-  /** The event’s data. For information about the event’s data, see the subscription type’s description in {@link https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/ Subscription Types}. */
-  event: object;
 }
 
 /**
@@ -177,7 +186,7 @@ interface RevocationMessage extends Message {
        * * user_removed — The user in the condition object is no longer a Twitch user.
        * * version_removed — The subscribed to subscription type and version is no longer supported.
        */
-      status: RevocationStatus;
+      status: "authorization_revoked" | "user_removed" | "version_removed";
       /** The type of event sent in the message. */
       type: string;
       /** The version number of the subscription type’s definition. */
@@ -199,20 +208,11 @@ interface RevocationMessage extends Message {
   };
 }
 
-/** The subscription's status. */
-enum RevocationStatus {
-  /** The user in the condition object revoked the authorization that let you get events on their behalf. */
-  "authorization_revoked",
-  /** The user in the condition object is no longer a Twitch user. */
-  "user_removed",
-  /** The subscribed to subscription type and version is no longer supported. */
-  "version_removed",
-}
-
 /**
  * NOT DEFINED YET
  * {@link https://dev.twitch.tv/docs/eventsub/websocket-reference/#close-message}
  */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface CloseMessage {
   // TODO
 }
