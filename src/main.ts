@@ -48,6 +48,8 @@ async function subscribe(kind: SubscriptionRequest) {
   }
 }
 
+//@ts-expect-error(Not used yet)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function unsubscribe(eventId: string) {
   const request: SubscriptionUnsubscribeRequest = {
     id: eventId,
@@ -78,7 +80,7 @@ async function unsubscribe(eventId: string) {
 }
 
 let socket: WebSocket | null = null;
-function openSocket() {
+export function openSocket() {
   if (socket?.readyState !== WebSocket.OPEN) {
     socket = new WebSocket("wss://eventsub.wss.twitch.tv/ws");
 
