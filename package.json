@@ -6,10 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "commitlint": "commitlint --edit"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@eslint/js": "^9.25.0",
+    "eslint": "^9.25.0",
+    "husky": "^9.1.7",
     "typescript": "~5.7.2",
+    "typescript-eslint": "^8.30.1",
     "vite": "^6.3.1"
   }
 }
