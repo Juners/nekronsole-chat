@@ -1,11 +1,6 @@
-import { get7tvMap, setupChat } from "./lib/chat";
+import { get7tvMap, setupChat } from "./lib/renders/chat-render";
 
 import { setup } from "./main";
-
-import Smile from "@/chat-config/Smile.json";
-import OMEGALUL from "@/chat-config/OMEGALUL.json";
-import xdd from "@/chat-config/xdd.json";
-import fish from "@/chat-config/!fish.json";
 
 import "./style.css";
 
