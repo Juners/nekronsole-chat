@@ -1,9 +1,16 @@
-import { getEmotesetFrom7tv } from "./lib/integrations/seventv";
-import { EmoteData, get7tvMap, setupChat } from "./lib/renders/chat-render";
+import {
+  getEmotesetFrom7tv,
+  ImageHostFile,
+} from "./lib/integrations/seventv/api";
+import {
+  getAccessToken,
+  getChatBadges,
+  getGlobalBadges,
+  getUserData,
+} from "./lib/integrations/twitch/api";
+import { EmoteData, setupChat } from "./lib/renders/chat-render";
 
 import { setup } from "./main";
-
-import { ImageHostFile } from "./lib/integrations/seventv.d";
 
 import "./style.css";
 
@@ -11,201 +18,74 @@ declare global {
   interface Console {
     chat: ReturnType<typeof setupChat>;
   }
-}
-
-const badges = new Map([
-  [
-    "broadcaster",
-    "https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1",
-  ],
-  [
-    "mod",
-    "https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0",
-  ],
-]);
-
-async function main(devMode = false) {
-  function getSSOLink(forceVerify = false) {
-    const state = crypto.randomUUID();
-    localStorage.setItem("state", state);
-
-    const claims: OIDCClaimsRequest = {
-      //   id_token: {
-      //     picture: null,
-      //     preferred_username: null,
-      //   },
-      userinfo: {
-        // TODO: In theory this should be returned, but is not being done
-        picture: null,
-        preferred_username: null,
-      },
-    };
-
-    const link = document.createElement("a");
-    const url = new URL("https://id.twitch.tv/oauth2/authorize");
-    const params = {
-      claims: JSON.stringify(claims),
-      client_id: import.meta.env.VITE_CLIENT_ID,
-      redirect_uri: import.meta.env.VITE_REDIRECT_URI,
-      response_type: "token",
-      // response_type: "token id_token",
-      scope: "user:read:chat",
-      // TODO: add nonce param using id_token
-      state,
-      force_verify: false,
-    };
-    if (forceVerify) {
-      params["force_verify"] = true;
-    }
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.append(key, value);
-    }
-    link.href = url.toString();
-    link.append(document.createTextNode("Connect with Twitch"));
-
-    return link;
+  interface Window {
+    Chat: Chat;
   }
-
-  /** Returns the userId if valid, null otherwise */
-  async function validateToken(access_token: string) {
-    try {
-      const response = await fetch("https://id.twitch.tv/oauth2/userinfo", {
-        headers: {
-          Authorization: `Bearer ${access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const claims: OIDCDefaultClaims = await response.json();
-
-      if (claims.iss !== "https://id.twitch.tv/oauth2") {
-        console.error("Token not valid, the issuer doesn't match");
-        return null;
-      }
-      if (claims.aud !== import.meta.env.VITE_CLIENT_ID) {
-        console.error("Token not valid, the client ID doesn't match");
-        return null;
-      }
-
-      // TODO: Validate signing algorithm by calling the discovery endpoint: https://dev.twitch.tv/docs/authentication/getting-tokens-oidc/#discovering-supported-claims-and-authorization-URIs
-      // TODO: Validate public JWK by calling the discovery endpoint: https://dev.twitch.tv/docs/authentication/getting-tokens-oidc/#discovering-supported-claims-and-authorization-URIs
-
-      if (!claims.sub) {
-        console.error("Token not valid, the user ID wasn't found");
-        return null;
-      }
-
-      return claims.sub;
-    } catch (e) {
-      console.error("An error occured while validating the claims", e);
-      return null;
-    }
-  }
-
-  async function getAccessToken() {
-    const access_token = localStorage.getItem("access_token");
-    const user_id = localStorage.getItem("user_id");
-
-    if (access_token && user_id) {
-      return { token: access_token, userId: user_id };
-    }
-
-    const { searchParams, hash } = new URL(location.href);
-    if (hash) {
-      const sentState = localStorage.getItem("state");
-      if (sentState) {
-        const data = new URLSearchParams(hash.substring(1));
-        const state = data.get("state");
-        if (state !== sentState) {
-          console.error("State doesn't match, aborting");
-          return null;
-        }
-
-        const token = data.get("access_token");
-        if (!token) {
-          console.error("No token found in the SSO response");
-          return null;
-        }
-
-        const userId = await validateToken(token);
-        if (userId) {
-          return { token, userId };
-        }
-      }
-    } else {
-      app?.append(getSSOLink(true));
-
-      if (searchParams.has("error")) {
-        console.error(
-          `The SSO returned an error! Was it canceled? Error ${searchParams.get(
-            "error"
-          )}: ${searchParams.get("error_description")}`
-        );
-
-        return null;
-      }
-    }
-
-    return null;
-  }
-
-  const app = document.querySelector("#app");
-
-  const access_token = await getAccessToken();
-
-  if (access_token) {
-    const { token, userId } = access_token;
-    if (token && userId) {
-      localStorage.setItem("access_token", token);
-      localStorage.setItem("user_id", userId);
-
-      const { start, eventBus } = setup(token, userId, devMode);
-
-      eventBus.addEventListener("connected", () => {
-        console.log("Connected to the chatroom");
-      });
-
-      eventBus.addEventListener("message", ({ detail }) => {
-        // console.log(detail);
-        // TODO: Do a bit of parsing
-        const msg = detail.message.fragments
-          .filter(({ type }) => type === "text")
-          .map(({ text }) => text)
-          .join("");
-
-        const obj = {
-          from: {
-            name: detail.chatter_user_name,
-            color: detail.color,
-            badges: detail.badges.map((x) => x["set_id"]),
-          },
-          time: detail.timestamp,
-          message: msg,
-        };
-
-        console.chat(obj);
-      });
-
-      eventBus.addEventListener("disconnected", () => {
-        console.log("Left the chatroom");
-      });
-
-      start();
-    } else {
-      console.error("An error occured, try reloading");
-    }
+  interface Chat {
+    enter: (streamer: string) => void;
+    exit: () => void;
   }
 }
+
+const devMode = false;
+
+const badgesMap = new Map<string, Map<string, [string, string]>>();
 
 function size2x(element: ImageHostFile) {
   return element.name === "2x";
 }
 
-if ("chat" in globalThis.console) {
-  console.warn("chat is already in use");
-} else {
-  // const emotesetOwner = import.meta.env.VITE_BROADCASTER_ID;
-  const emotesetOwner = "697578274";
-  const emojis = await getEmotesetFrom7tv(emotesetOwner);
+async function login() {
+  console.log("Logging in...");
+
+  const app = document.querySelector("#app");
+  if (!app) return; // TODO Maybe don't require app
+
+  const access_token = await getAccessToken(app);
+  if (!access_token) return;
+
+  const { token, userId } = access_token;
+  if (!(token && userId)) {
+    console.error("An error occured, try reloading");
+    return;
+  }
+
+  console.log("Logged in");
+
+  // TODO: Don't store it, simply request it again
+  localStorage.setItem("access_token", token);
+  // THis one is fine
+  localStorage.setItem("user_id", userId);
+
+  return access_token;
+}
+
+async function enterChat({
+  streamer_name,
+  access_token,
+  user_id,
+}: {
+  streamer_name: string;
+  access_token: string;
+  user_id: string;
+}) {
+  console.log("Loading some data, please wait...");
+
+  const client_id = import.meta.env.VITE_CLIENT_ID;
+
+  const streamerData = await getUserData(
+    streamer_name,
+    access_token,
+    client_id
+  );
+  if (!streamerData) {
+    console.error(`Couldn't find the streamer ${streamer_name}`);
+    return;
+  }
+
+  const broadcaster_id = streamerData[0].id;
+
+  const emojis = await getEmotesetFrom7tv(broadcaster_id);
 
   const emoteSetTransformed = Object.fromEntries(
     Array.from(emojis.values(), function (v) {
@@ -220,9 +100,161 @@ if ("chat" in globalThis.console) {
     })
   );
 
-  const chat = setupChat(emoteSetTransformed, badges);
+  const globalBadges = await getGlobalBadges(access_token, client_id);
+  if (globalBadges) {
+    for (let i = 0; i < globalBadges.length; i++) {
+      const badge = globalBadges[i];
+
+      const versionMap = new Map();
+      for (let j = 0; j < badge.versions.length; j++) {
+        const version = badge.versions[j];
+
+        versionMap.set(version.id, [version.title, version.image_url_1x]);
+      }
+
+      badgesMap.set(badge.set_id, versionMap);
+    }
+  }
+
+  const channelBadges = await getChatBadges(
+    broadcaster_id,
+    access_token,
+    client_id
+  );
+  if (channelBadges) {
+    for (let i = 0; i < channelBadges.length; i++) {
+      const badge = channelBadges[i];
+
+      const versionMap = new Map();
+      for (let j = 0; j < badge.versions.length; j++) {
+        const version = badge.versions[j];
+
+        versionMap.set(version.id, [version.title, version.image_url_1x]);
+      }
+
+      badgesMap.set(badge.set_id, versionMap);
+    }
+  }
+
+  const chat = setupChat(emoteSetTransformed, badgesMap);
 
   console.chat = chat;
+
+  const stopListening = startListening({
+    broadcaster_id,
+    token: access_token,
+    userId: user_id,
+    devMode,
+  });
+  return stopListening;
+}
+
+function startListening({
+  broadcaster_id,
+  token,
+  userId,
+  devMode,
+}: {
+  broadcaster_id: string;
+  token: string;
+  userId: string;
+  devMode: boolean;
+}) {
+  console.log("Connecting to the chat...");
+
+  const { start, stop, eventBus } = setup(token, userId, devMode);
+
+  eventBus.addEventListener("connected", () => {
+    console.log("Connected to the chatroom");
+  });
+
+  eventBus.addEventListener("message", ({ detail }) => {
+    // console.log(detail);
+    // TODO: Do a bit of parsing
+    const msg = detail.message.fragments
+      .filter(({ type }) => ["text", "emote"].includes(type))
+      .map(({ type, text, emote }) => {
+        if (type === "text") {
+          return text as string;
+        } else if (type === "emote") {
+          return {
+            alias: text,
+            image: {
+              url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark`,
+            },
+          } as EmoteData;
+        }
+      });
+
+    const obj = {
+      from: {
+        name: detail.chatter_user_name,
+        color: detail.color,
+        badges: detail.badges,
+      },
+      time: detail.timestamp,
+      message: msg,
+    };
+
+    console.chat(obj);
+  });
+
+  eventBus.addEventListener("disconnected", () => {
+    console.log("Left the chatroom");
+  });
+
+  start(broadcaster_id);
+
+  return stop;
+}
+
+async function main() {
+  if ("chat" in globalThis.console) {
+    console.error("chat is already in use!");
+  } else {
+    const data = await login();
+    if (!data) {
+      console.error("Error loging in");
+      return;
+    }
+
+    if (!window.Chat) {
+      let chat_name: string | null = null;
+      let leaveChat: (() => void) | undefined | null = null;
+
+      window.Chat = {
+        enter: function (streamer_name: string) {
+          if (typeof streamer_name !== "string") {
+            console.error("You must provide a valid streamer name");
+          }
+
+          if (leaveChat) {
+            this.exit();
+          }
+
+          chat_name = streamer_name;
+
+          console.log("Entering %s's chat", streamer_name);
+          enterChat({
+            streamer_name,
+            access_token: data.token,
+            user_id: data.userId,
+          }).then((leaveFn) => {
+            leaveChat = leaveFn;
+          });
+        },
+        exit: function () {
+          // TODO: allow to abort entering a chat?
+          if (leaveChat) {
+            console.log("Leaving %s's chat", chat_name);
+            leaveChat();
+          } else {
+            console.error("Not in a chat, or still entering one");
+          }
+        },
+      };
+    }
+  }
 }
 
 main();

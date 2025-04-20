@@ -172,49 +172,48 @@ export function setup(access_token: string, user_id: string, devMode = false) {
     }
   }
 
-  async function onSessionWelcome(message: WelcomeMessage) {
-    const session = message.payload.session.id;
-
-    const newMessageSub: ChannelChatMessageEvent = {
-      type: "channel.chat.message",
-      version: "1",
-      condition: {
-        broadcaster_user_id: import.meta.env.VITE_BROADCASTER_ID,
-        user_id,
-      },
-      transport: {
-        method: "websocket",
-        session_id: session,
-      },
-    };
-
-    // TODO: Closing the socket closes the sub after it fails the pong. This is unnecesary on first conexion, so let's move it
-    // let subscriptionData;
-    // const existingSubs = await getSubscriptions("channel.chat.message");
-    // if (existingSubs.length) {
-    //   subscriptionData = existingSubs;
-    // } else {
-    // }
-    const newSubscriptions = await subscribe(newMessageSub);
-
-    if (newSubscriptions?.data?.length) {
-      const data = newSubscriptions.data;
-      maxAllowedCost = newSubscriptions.max_total_cost;
-      consumedCost = newSubscriptions.total_cost;
-      // TODO: Allow more than one? Close the old ones?
-      subscriptions["channel.chat.message"] = data[0];
-      // TODO: If the cost of the subscription goes over the limit, do something, idk, maybe warn the user
-      if (consumedCost >= maxAllowedCost) {
-        console.warn("Event subscription reached its limit!");
-      }
-
-      // TODO: if already a session welcome seen, ignore this?
-    }
-  }
-
-  // TODO: Do I need to pong back?
   let socket: WebSocket | null = null;
-  function start() {
+  function start(broadcaster_id: string) {
+    async function onSessionWelcome(message: WelcomeMessage) {
+      const session = message.payload.session.id;
+
+      const newMessageSub: ChannelChatMessageEvent = {
+        type: "channel.chat.message",
+        version: "1",
+        condition: {
+          broadcaster_user_id: broadcaster_id,
+          user_id,
+        },
+        transport: {
+          method: "websocket",
+          session_id: session,
+        },
+      };
+
+      // TODO: Closing the socket closes the sub after it fails the pong. This is unnecesary on first conexion, so let's move it
+      // let subscriptionData;
+      // const existingSubs = await getSubscriptions("channel.chat.message");
+      // if (existingSubs.length) {
+      //   subscriptionData = existingSubs;
+      // } else {
+      // }
+      const newSubscriptions = await subscribe(newMessageSub);
+
+      if (newSubscriptions?.data?.length) {
+        const data = newSubscriptions.data;
+        maxAllowedCost = newSubscriptions.max_total_cost;
+        consumedCost = newSubscriptions.total_cost;
+        // TODO: Allow more than one? Close the old ones?
+        subscriptions["channel.chat.message"] = data[0];
+        // TODO: If the cost of the subscription goes over the limit, do something, idk, maybe warn the user
+        if (consumedCost >= maxAllowedCost) {
+          console.warn("Event subscription reached its limit!");
+        }
+
+        // TODO: if already a session welcome seen, ignore this?
+      }
+    }
+
     if (socket?.readyState !== WebSocket.OPEN) {
       socket = new WebSocket("wss://eventsub.wss.twitch.tv/ws");
 
@@ -284,8 +283,14 @@ export function setup(access_token: string, user_id: string, devMode = false) {
     }
   }
 
+  // TODO: Allow to reopen chat instead
+  function stop() {
+    socket?.close();
+  }
+
   return {
     start,
+    stop,
     eventBus: element,
   };
 }

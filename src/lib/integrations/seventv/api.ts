@@ -2,7 +2,9 @@ import {
   EmoteVersionState,
   ImageHostFile,
   UserConnectionModel,
-} from "./seventv.d";
+} from "./types";
+
+export * from "./types.d";
 
 export type EmoteData = {
   alias: string;

@@ -38,7 +38,7 @@ export const DEFAULT_CONFIG: Config = {
 
 export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
   emoteMap: EmoteMap,
-  badgeMap: Map<string, string>,
+  badgeMap: Map<string, Map<string, [string, string]>>,
   config: Config = DEFAULT_CONFIG
 ) {
   type emoteKey = keyof EmoteMap & string;
@@ -63,6 +63,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
   const cachedEmotes: Partial<Record<emoteKey, EmojiType>> = {};
   const cachedBadges = new Map<string, EmojiType>();
+  const cachedTwitchEmotes = new Map<string, EmojiType>();
 
   // let biggestHeight = SIZE;
 
@@ -104,16 +105,24 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     return cached;
   }
 
-  async function getBadge(em: string): Promise<EmojiType | undefined> {
-    let cached = cachedBadges.get(em);
+  async function getBadge(
+    kind: string,
+    version: string
+  ): Promise<EmojiType | undefined> {
+    let cached = cachedBadges.get(kind);
     if (cached) {
       return cached;
     }
 
-    const badge = badgeMap.get(em);
-    if (!badge) return;
+    const badge = badgeMap.get(kind);
+    const badgeVersion = badge?.get(version);
+    if (!badgeVersion) return;
 
-    const { width, height, base64: objectUrl } = await getImage(badge + "/1");
+    const {
+      width,
+      height,
+      base64: objectUrl,
+    } = await getImage(badgeVersion[1]);
     const url = objectUrl;
 
     const sizeStr =
@@ -123,17 +132,51 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
           }px; padding-left: ${width}px; `
         : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
 
-    // TODO BASE_CSS line height - emote height
-
     const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
 
     cached = {
-      name: em,
+      name: badgeVersion[0],
       ratio: 1,
       str,
     };
 
-    cachedBadges.set(em, cached);
+    cachedBadges.set(kind, cached);
+
+    return cached;
+  }
+
+  async function getTwitchEmote({
+    alias,
+    image,
+  }: EmoteData): Promise<EmojiType | undefined> {
+    let cached = cachedTwitchEmotes.get(alias);
+    if (cached) {
+      return cached;
+    }
+
+    const {
+      width,
+      height,
+      base64: objectUrl,
+    } = await getImage(image.url + "/1.0");
+    const url = objectUrl;
+
+    const sizeStr =
+      browser === "chromium"
+        ? `padding-top: ${height / 2 + height / 4}px; padding-bottom: ${
+            height / 2
+          }px; padding-left: ${width}px; `
+        : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
+
+    const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
+
+    cached = {
+      name: alias,
+      ratio: 1,
+      str,
+    };
+
+    cachedTwitchEmotes.set(alias, cached);
 
     return cached;
   }
@@ -144,8 +187,12 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     from,
     time,
   }: {
-    message: string;
-    from?: { name: string; color?: string; badges?: string[] };
+    message: (string | EmoteData)[];
+    from?: {
+      name: string;
+      color?: string;
+      badges?: { id: string; info: string; set_id: string }[];
+    };
     time?: number;
   }) {
     // if (typeof input !== "string" || input.trim().length === 0) {
@@ -167,9 +214,8 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     }
 
     if (from) {
-      const badgeId = from.badges?.[0];
-      if (badgeId) {
-        const badge = await getBadge(badgeId);
+      for (const { set_id, id } of from.badges || []) {
+        const badge = await getBadge(set_id, id);
         if (badge) {
           format.push("%c%s%c");
           msgs.push([badge.str], { name: badge.name }, [BASE_CSS]);
@@ -181,15 +227,10 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
       msgs.push([BASE_CSS + colorStyle], [from.name], [BASE_CSS], [":"]);
     }
 
-    for (const word of message.split(" ")) {
-      let emoji = null;
-      if (word in emoteMap) {
-        emoji = await getEmoji(word);
-      }
-
-      if (emoji) {
+    async function addToMessage(toRender: string | EmojiType) {
+      if (typeof toRender !== "string") {
         format.push("%c%s%c");
-        msgs.push([emoji.str], { name: emoji.name });
+        msgs.push([toRender.str], { name: toRender.name });
       } else {
         let last = msgs.pop();
         if (!last || !Array.isArray(last)) {
@@ -200,8 +241,33 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
           last = [];
         }
 
-        last.push(word || "");
+        last.push(toRender || "");
         msgs.push(last);
+      }
+    }
+
+    async function extractEmoteFromWord(word: string) {
+      let emoji;
+      if (word in emoteMap) {
+        emoji = await getEmoji(word);
+      }
+
+      return emoji;
+    }
+
+    for (const fragment of message) {
+      if (typeof fragment === "string") {
+        for (const word of fragment.split(" ")) {
+          const emoji = await extractEmoteFromWord(word);
+          await addToMessage(emoji ?? word);
+        }
+      } else {
+        let emoji = await getTwitchEmote(fragment);
+        if (!emoji) {
+          emoji = await extractEmoteFromWord(fragment.alias);
+        }
+
+        await addToMessage(emoji ?? fragment.alias);
       }
     }
 
@@ -212,16 +278,6 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
     console.log(format.join(" "), ...finalArr);
   };
-}
-
-// TODO: Control exceptions
-export async function get7tvMap() {
-  const response = await fetch(
-    "https://juners.github.io/emote-usage/emotes.json"
-  );
-  const emotes = response.json();
-
-  return emotes;
 }
 
 type ImageInfo = {
@@ -241,6 +297,7 @@ export async function getImage(url: string): Promise<ImageInfo> {
 
   const blob = await (await fetch(url)).blob();
 
+  // TODO: should i remove the object url, or will it stop rendering them?
   const src = URL.createObjectURL(blob);
   const img = document.createElement("img");
   img.src = src;
