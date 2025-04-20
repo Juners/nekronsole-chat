@@ -1,6 +1,9 @@
-import { get7tvMap, setupChat } from "./lib/renders/chat-render";
+import { getEmotesetFrom7tv } from "./lib/integrations/seventv";
+import { EmoteData, get7tvMap, setupChat } from "./lib/renders/chat-render";
 
 import { setup } from "./main";
+
+import { ImageHostFile } from "./lib/integrations/seventv.d";
 
 import "./style.css";
 
@@ -9,6 +12,17 @@ declare global {
     chat: ReturnType<typeof setupChat>;
   }
 }
+
+const badges = new Map([
+  [
+    "broadcaster",
+    "https://static-cdn.jtvnw.net/badges/v1/5527c58c-fb7d-422d-b71b-f309dcb85cc1",
+  ],
+  [
+    "mod",
+    "https://static-cdn.jtvnw.net/badges/v1/3267646d-33f0-4b17-b3df-f923a41db1d0",
+  ],
+]);
 
 async function main(devMode = false) {
   function getSSOLink(forceVerify = false) {
@@ -162,7 +176,9 @@ async function main(devMode = false) {
           from: {
             name: detail.chatter_user_name,
             color: detail.color,
+            badges: detail.badges.map((x) => x["set_id"]),
           },
+          time: detail.timestamp,
           message: msg,
         };
 
@@ -180,33 +196,31 @@ async function main(devMode = false) {
   }
 }
 
+function size2x(element: ImageHostFile) {
+  return element.name === "2x";
+}
+
 if ("chat" in globalThis.console) {
   console.warn("chat is already in use");
 } else {
-  const emojis = await get7tvMap();
+  // const emotesetOwner = import.meta.env.VITE_BROADCASTER_ID;
+  const emotesetOwner = "697578274";
+  const emojis = await getEmotesetFrom7tv(emotesetOwner);
 
-  const animatedWebp = ({ mime, scale, frameCount }) =>
-    mime === "image/webp" && scale === 1 && frameCount > 1;
-  const staticWebp = ({ mime, scale, frameCount }) =>
-    mime === "image/webp" && scale === 1;
-
-  const map = Object.entries(emojis)
-    .map(([alias, em]) => {
-      const imageList = em.images?.emote?.images;
-      if (!imageList?.length) {
-        return;
-      }
-
-      const image =
-        imageList.find(animatedWebp) ||
-        imageList.find(staticWebp) ||
-        imageList[0];
-
-      return [alias, { alias: em.alias, image }];
+  const emoteSetTransformed = Object.fromEntries(
+    Array.from(emojis.values(), function (v) {
+      const file = v.files.find(size2x) ?? v.files[0];
+      return [
+        v.alias,
+        {
+          alias: v.alias,
+          image: { url: `https:${v.url}/${file.name}` },
+        },
+      ];
     })
-    .filter((x) => !!x);
+  );
 
-  const chat = setupChat(Object.fromEntries(map));
+  const chat = setupChat(emoteSetTransformed, badges);
 
   console.chat = chat;
 }

@@ -38,6 +38,7 @@ export const DEFAULT_CONFIG: Config = {
 
 export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
   emoteMap: EmoteMap,
+  badgeMap: Map<string, string>,
   config: Config = DEFAULT_CONFIG
 ) {
   type emoteKey = keyof EmoteMap & string;
@@ -50,6 +51,8 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
   const SIZE = config.sizes.emote;
   const SIZE_SPACE = config.sizes.space;
+  // const BASE_CSS = "line-height: 32px;";
+  const BASE_CSS = "";
 
   const browser = config.forceBrowser || detectedBrowser;
   if (!browser || !allowedBrowsers.includes(browser)) {
@@ -59,6 +62,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
   }
 
   const cachedEmotes: Partial<Record<emoteKey, EmojiType>> = {};
+  const cachedBadges = new Map<string, EmojiType>();
 
   // let biggestHeight = SIZE;
 
@@ -73,15 +77,18 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
       width,
       height,
       base64: objectUrl,
-    } = await getEmojiData(emoji.image.url);
+    } = await getImage(emoji.image.url);
     const url = objectUrl;
 
     const sizeStr =
       browser === "chromium"
-        ? `line-height: ${height}px; padding-left: ${width - SIZE_SPACE}px; `
+        ? `padding-top: ${height / 2 + height / 4}px; padding-bottom: ${
+            height / 2
+          }px; padding-left: ${width}px; `
         : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
 
-    const str = `color:transparent; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
+    // TODO: Prohibit more than 32 px high emojis, or do something different here? Maybe check all sizes provided and pick the biggest?
+    const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
 
     // if (height > biggestHeight) biggestHeight = height;
 
@@ -97,13 +104,49 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     return cached;
   }
 
+  async function getBadge(em: string): Promise<EmojiType | undefined> {
+    let cached = cachedBadges.get(em);
+    if (cached) {
+      return cached;
+    }
+
+    const badge = badgeMap.get(em);
+    if (!badge) return;
+
+    const { width, height, base64: objectUrl } = await getImage(badge + "/1");
+    const url = objectUrl;
+
+    const sizeStr =
+      browser === "chromium"
+        ? `padding-top: ${height / 2 + height / 4}px; padding-bottom: ${
+            height / 2
+          }px; padding-left: ${width}px; `
+        : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
+
+    // TODO BASE_CSS line height - emote height
+
+    const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
+
+    cached = {
+      name: em,
+      ratio: 1,
+      str,
+    };
+
+    cachedBadges.set(em, cached);
+
+    return cached;
+  }
+
   // TODO: Since is async, use a queue instead
   return async function chat({
     message,
     from,
+    time,
   }: {
     message: string;
-    from?: { name: string; color?: string };
+    from?: { name: string; color?: string; badges?: string[] };
+    time?: number;
   }) {
     // if (typeof input !== "string" || input.trim().length === 0) {
     //   console.log(input);
@@ -111,12 +154,31 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     // }
 
     const format = [];
-    const msgs: (string[] | Pick<EmojiType, "ratio" | "name">)[] = [];
+    const msgs: (string[] | Pick<EmojiType, "name">)[] = [];
+
+    if (time) {
+      format.push("%c%s%c");
+      const colorStyle = "color: rgb(167 167 167);";
+      const timeStr = new Date(time).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      msgs.push([BASE_CSS + colorStyle], [`[${timeStr}]`], [BASE_CSS]);
+    }
 
     if (from) {
+      const badgeId = from.badges?.[0];
+      if (badgeId) {
+        const badge = await getBadge(badgeId);
+        if (badge) {
+          format.push("%c%s%c");
+          msgs.push([badge.str], { name: badge.name }, [BASE_CSS]);
+        }
+      }
+
       format.push("%c%s%c%s");
-      const colorStyle = from.color ? `color: ${from.color}` : "";
-      msgs.push([colorStyle], [from.name], [""], [":"]);
+      const colorStyle = from.color ? `color: ${from.color};` : "";
+      msgs.push([BASE_CSS + colorStyle], [from.name], [BASE_CSS], [":"]);
     }
 
     for (const word of message.split(" ")) {
@@ -126,15 +188,15 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
       }
 
       if (emoji) {
-        format.push("%c%s");
-        msgs.push([emoji.str], { ratio: emoji.ratio, name: emoji.name });
+        format.push("%c%s%c");
+        msgs.push([emoji.str], { name: emoji.name });
       } else {
         let last = msgs.pop();
         if (!last || !Array.isArray(last)) {
           if (last && !Array.isArray(last)) msgs.push(last);
 
           format.push("%c%s");
-          msgs.push([""]);
+          msgs.push([BASE_CSS], [""]);
           last = [];
         }
 
@@ -144,7 +206,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     }
 
     const finalArr = msgs.map(
-      (x) => (Array.isArray(x) ? x.join(" ") : " ")
+      (x) => (Array.isArray(x) ? x.join(" ") : x.name)
       // : new Array(Math.ceil((SIZE * x.ratio) / SIZE_SPACE) + 1).join(" ")
     );
 
@@ -162,20 +224,20 @@ export async function get7tvMap() {
   return emotes;
 }
 
-type EmojiInfo = {
+type ImageInfo = {
   width: number;
   height: number;
   base64: string;
 };
 
 // TODO: Optimize it so after unused for a while, is removed
-const emojiCache: {
-  [key: string]: EmojiInfo;
+const imageCache: {
+  [key: string]: ImageInfo;
 } = {};
 
 // TODO: Control exceptions
-export async function getEmojiData(url: string): Promise<EmojiInfo> {
-  if (emojiCache[url]) return emojiCache[url];
+export async function getImage(url: string): Promise<ImageInfo> {
+  if (imageCache[url]) return imageCache[url];
 
   const blob = await (await fetch(url)).blob();
 
@@ -206,9 +268,8 @@ export async function getEmojiData(url: string): Promise<EmojiInfo> {
       res(emoji);
     };
   });
-
   const emoji = { width, height, base64 };
-  emojiCache[url] = emoji;
+  imageCache[url] = emoji;
 
   return emoji;
 }

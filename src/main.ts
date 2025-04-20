@@ -3,6 +3,11 @@ export function setup(access_token: string, user_id: string, devMode = false) {
     console.error("You must provide an access token first!");
   }
 
+  const consumedMessages = new Map<
+    string,
+    Message["metadata"]["message_type"]
+  >();
+
   const element: Node = document.createElement("div");
 
   // TODO: Allow to update the token when it expires!
@@ -10,7 +15,26 @@ export function setup(access_token: string, user_id: string, devMode = false) {
   function getMessage(data: string) {
     try {
       const object: Partial<Message> = JSON.parse(data);
-      switch (object?.metadata?.message_type) {
+      const messsageType = object?.metadata?.message_type;
+      const messageId = object?.metadata?.message_id;
+
+      if (!messageId) {
+        console.error("No ID in the message, ignoring it", object);
+        return null;
+      }
+
+      if (messsageType) {
+        // The twitch API can send the same message more than once. We protect against that and replay attacks that could duplicate messages
+        if (consumedMessages.get(messageId)) {
+          if (devMode) {
+            console.warn("The message ID was not unique, ignoring it");
+          }
+        } else {
+          consumedMessages.set(messageId, messsageType);
+        }
+      }
+
+      switch (messsageType) {
         case "session_welcome":
           return object as WelcomeMessage;
         case "session_keepalive":
@@ -106,7 +130,10 @@ export function setup(access_token: string, user_id: string, devMode = false) {
   // TODO: Maybe have this cache protected by a closure?
   const subscriptions: Partial<Record<SubscriptionTypes, SubscriptionData>> =
     {};
+  let maxAllowedCost = 0;
+  let consumedCost = 0;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function getSubscriptions(type?: SubscriptionTypes) {
     const request: GetSubscriptionsRequest = {
       user_id,
@@ -162,18 +189,26 @@ export function setup(access_token: string, user_id: string, devMode = false) {
     };
 
     // TODO: Closing the socket closes the sub after it fails the pong. This is unnecesary on first conexion, so let's move it
-    let subscriptionData;
-    const existingSubs = await getSubscriptions("channel.chat.message");
-    if (existingSubs.length) {
-      subscriptionData = existingSubs;
-    } else {
-      subscriptionData = await subscribe(newMessageSub);
-    }
+    // let subscriptionData;
+    // const existingSubs = await getSubscriptions("channel.chat.message");
+    // if (existingSubs.length) {
+    //   subscriptionData = existingSubs;
+    // } else {
+    // }
+    const newSubscriptions = await subscribe(newMessageSub);
 
-    if (subscriptionData?.length > 0) {
+    if (newSubscriptions?.data?.length) {
+      const data = newSubscriptions.data;
+      maxAllowedCost = newSubscriptions.max_total_cost;
+      consumedCost = newSubscriptions.total_cost;
       // TODO: Allow more than one? Close the old ones?
-      subscriptions["channel.chat.message"] = subscriptionData[0];
+      subscriptions["channel.chat.message"] = data[0];
       // TODO: If the cost of the subscription goes over the limit, do something, idk, maybe warn the user
+      if (consumedCost >= maxAllowedCost) {
+        console.warn("Event subscription reached its limit!");
+      }
+
+      // TODO: if already a session welcome seen, ignore this?
     }
   }
 
@@ -213,12 +248,17 @@ export function setup(access_token: string, user_id: string, devMode = false) {
           case "notification":
             element.dispatchEvent(
               new CustomEvent("message", {
-                detail: (message as NotificationMessage).payload.event,
+                detail: {
+                  ...(message as NotificationMessage).payload.event,
+                  timestamp: new Date(
+                    message.metadata.message_timestamp
+                  ).getTime(),
+                },
               })
             );
             break;
           case "session_keepalive":
-            // TODO: Do something here?
+            // TODO: Do something here? Maybe if not recieved in a long time, reopen the connection? Seems to be each 10s.
             // Still alive
             break;
           default:
