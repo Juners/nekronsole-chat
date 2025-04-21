@@ -226,6 +226,8 @@ function startListening({
     console.log("Connected to the chatroom");
   });
 
+  // TODO: Make types
+  //@ts-expect-error(Type not rolled yet)
   eventBus.addEventListener("message", ({ detail }) => {
     const fragments = [];
     for (const fragment of detail.message.fragments) {

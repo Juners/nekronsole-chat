@@ -63,8 +63,8 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     extraText?: string;
   };
 
-  const SIZE = config.sizes.emote;
-  const SIZE_SPACE = config.sizes.space;
+  // const SIZE = config.sizes.emote;
+  // const SIZE_SPACE = config.sizes.space;
   // const BASE_CSS = "line-height: 32px;";
   const BASE_CSS = "";
 

@@ -133,6 +133,7 @@ export function setup(access_token: string, user_id: string, devMode = false) {
   let maxAllowedCost = 0;
   let consumedCost = 0;
 
+  //@ts-expect-error(Unusused for now)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function getSubscriptions(type?: SubscriptionTypes) {
     const request: GetSubscriptionsRequest = {
