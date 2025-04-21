@@ -283,7 +283,7 @@ async function main() {
     window.Twitch = {
       login: () => {
         const loginBtn: HTMLElement | null = document.querySelector("#login");
-        if (loginBtn) {
+        if (!loginBtn) {
           console.error(
             "Couldn't find the login button. Try manually clicking it in the HTML"
           );
