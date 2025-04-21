@@ -362,7 +362,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
       if (typeof x === "string") {
         str = x;
       } else if (Array.isArray(x)) {
-        str = x.join("");
+        str = x.join(" ");
       } else {
         str = x.name;
       }
