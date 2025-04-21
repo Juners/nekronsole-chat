@@ -280,11 +280,32 @@ async function main() {
   if ("chat" in globalThis.console) {
     console.error("chat is already in use!");
   } else {
+    window.Twitch = {
+      login: () => {
+        const loginBtn: HTMLElement | null = document.querySelector("#login");
+        if (loginBtn) {
+          console.error(
+            "Couldn't find the login button. Try manually clicking it in the HTML"
+          );
+        }
+        loginBtn?.click();
+      },
+      logout,
+      Chat: window.Chat ?? {
+        enter: () => {
+          console.error("You can't use the chat until you log in");
+        },
+        exit: () => {
+          console.error("You can't use the chat until you log in");
+        },
+      },
+    };
+
     console.log(
       "How to use this chat: " +
         "\n1. Login with twitch by clicking on the html link 'login'. Alternatively, you can call Twitch.login(). If already logged in, your session will be used" +
         "\n2. Connect to a chatroom by calling Chat.enter(streamer) or Twitch.Chat.enter(streamer). If already in a chat, you will leave that and enter this new one." +
-        "\n3. To leave to a chatroom, you can call Chat.leave() or Twitch.Chat.leave()"+
+        "\n3. To leave to a chatroom, you can call Chat.leave() or Twitch.Chat.leave()" +
         "\n4. To logout, you can click on 'logout' in the page or call Twitch.logout()"
     );
 
@@ -328,21 +349,9 @@ async function main() {
           }
         },
       };
-    }
 
-    window.Twitch = {
-      login: () => {
-        const loginBtn: HTMLElement | null = document.querySelector("#login");
-        if (loginBtn) {
-          console.error(
-            "Couldn't find the login button. Try manually clicking it in the HTML"
-          );
-        }
-        loginBtn?.click();
-      },
-      logout,
-      Chat: window.Chat,
-    };
+      window.Twitch.Chat = window.Chat;
+    }
   }
 }
 
