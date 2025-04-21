@@ -133,10 +133,8 @@ export async function getAccessToken(app: Element) {
     );
 
     window.addEventListener("message", async (e) => {
-      if (
-        e.origin !== import.meta.env.VITE_URL ||
-        e.data?.type !== "authorize_twitch"
-      )
+      const url = new URL(import.meta.env.VITE_URL);
+      if (e.origin !== url.origin || e.data?.type !== "authorize_twitch")
         return;
       if (!e.data.data?.link) return;
 
