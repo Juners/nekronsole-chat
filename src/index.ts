@@ -125,7 +125,7 @@ async function enterChat({
         versionMap.set(version.id, [version.title, version.image_url_1x]);
       }
 
-      badgesMap.set(badge.set_id.toLowerCase(), versionMap);
+      badgesMap.set(badge.set_id, versionMap);
     }
   }
 

@@ -269,7 +269,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
     if (from && from.name) {
       for (const { set_id, id } of from.badges || []) {
-        const badge = await getBadge(set_id.toLowerCase(), id); // .toLowerCase() since I don't trust twitch API anymore after cheermotes
+        const badge = await getBadge(set_id, id);
         if (badge) {
           format.push("%c%s");
           msgs.push(badge.str, { name: badge.name });
