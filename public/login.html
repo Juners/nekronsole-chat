@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/webp" href="./peepoChat.webp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>👻🦴 + console = profit</title>
+    <script>
+      window.addEventListener("load", () => {
+        const { searchParams } = new URL(location);
+        const url = searchParams.get("url");
+        if (url) {
+          location.assign(url);
+
+          const redirectText = document.querySelector("#redirect");
+          redirectText.removeAttribute("hidden");
+          const link = redirectText.querySelector("a");
+          link.href = url;
+        }
+      });
+    </script>
+  </head>
+
+  <body>
+    <div>Loging with twitch...</div>
+    <div hidden id="redirect">
+      If you are not automatically redirected, click <a href="#">here</a>
+    </div>
+  </body>
+</html>

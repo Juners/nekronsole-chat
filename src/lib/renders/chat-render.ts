@@ -211,7 +211,11 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
     if (!image) return;
 
-    const { width, height, base64: objectUrl } = await getImage(image[1]);
+    const {
+      width,
+      height,
+      base64: objectUrl,
+    } = await getImage(image[1]);
     const url = objectUrl;
 
     const sizeStr =
@@ -353,18 +357,17 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     }
 
     // TODO: Trailing strings are being parsed out
-    const finalArr = msgs.map(
-      (x) => {
-        if (typeof x === "string") {
-          return x;
-        } else if (Array.isArray(x)) {
-          return x.join(" ");
-        } else {
-          return x.name;
-        }
+    const finalArr = msgs.map((x) => {
+      let str;
+      if (typeof x === "string") {
+        str = x;
+      } else if (Array.isArray(x)) {
+        str = x.join("");
+      } else {
+        str = x.name;
       }
-      // : new Array(Math.ceil((SIZE * x.ratio) / SIZE_SPACE) + 1).join(" ")
-    );
+      return str;
+    });
 
     console.log(format.join(""), ...finalArr);
   };

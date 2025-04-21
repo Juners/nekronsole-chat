@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
-import { defineConfig } from "vite";
-import path from 'path';
+import { resolve } from 'path';
+import { defineConfig } from "vite"; import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
     base: "./",
@@ -9,8 +9,9 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@": path.resolve(__dirname, "./src"),
-            "@@": path.resolve(__dirname, "."),
+            "@": resolve(__dirname, "./src"),
+            "@@": resolve(__dirname, "."),
         }
-    }
+    },
+    plugins: [basicSsl()]
 })

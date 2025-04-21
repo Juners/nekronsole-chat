@@ -3,7 +3,10 @@ import {
   BroadcasterChatBadgesResponse,
 } from "./twitchBroadcasterChatBadges";
 import { GlobalChatBadgesResponse } from "./twitchChatBadges";
-import { GetCheermotesRequest, GetCheermotesResponse } from "./twitchCheermotes";
+import {
+  GetCheermotesRequest,
+  GetCheermotesResponse,
+} from "./twitchCheermotes";
 
 function getSSOLink(forceVerify = false) {
   const state = crypto.randomUUID();
@@ -40,8 +43,10 @@ function getSSOLink(forceVerify = false) {
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.append(key, value);
   }
+  link.id = "login";
   link.href = url.toString();
   link.append(document.createTextNode("Connect with Twitch"));
+  link.target = "authorizeWithTwitch";
 
   return link;
 }
@@ -81,6 +86,36 @@ async function validateToken(access_token: string) {
   }
 }
 
+function loginNewTab(
+  ev: MouseEvent,
+  url: string,
+  handlerRef: { current: Window | undefined }
+) {
+  const width = 700;
+  const height = 800;
+  const marginLeft = window.screenLeft + (window.outerWidth - width) / 2;
+  const marginTop = window.screenTop + (window.outerHeight - height) / 2;
+  let handle = window.open(
+    "./login.html?" + new URLSearchParams([["url", url]]),
+    "authorizeWithTwitch",
+    `width=${width}px,height=${height}px,left=${marginLeft}px,top=${marginTop}px,popup=true`
+  );
+
+  // Try to open it in a new tab instead
+  if (!handle) {
+    handle = window.open(url, "login");
+  }
+
+  // If still not allowed, we redirect
+  if (!handle) {
+    return;
+  }
+
+  handlerRef.current = handle;
+
+  ev.preventDefault();
+}
+
 export async function getAccessToken(app: Element) {
   const access_token = localStorage.getItem("access_token");
   const user_id = localStorage.getItem("user_id");
@@ -89,43 +124,66 @@ export async function getAccessToken(app: Element) {
     return { token: access_token, userId: user_id };
   }
 
-  const { searchParams, hash } = new URL(location.href);
-  if (hash) {
-    const sentState = localStorage.getItem("state");
-    if (sentState) {
-      const data = new URLSearchParams(hash.substring(1));
-      const state = data.get("state");
-      if (state !== sentState) {
-        console.error("State doesn't match, aborting");
-        return null;
+  const link = getSSOLink(true);
+
+  const handlerRef: { current: Window | undefined } = { current: undefined };
+  const promise = new Promise<{ token: string; userId: string }>((res, rej) => {
+    link.addEventListener("click", (ev) =>
+      loginNewTab(ev, link.href, handlerRef)
+    );
+
+    window.addEventListener("message", async (e) => {
+      if (
+        e.origin !== import.meta.env.VITE_URL ||
+        e.data?.type !== "authorize_twitch"
+      )
+        return;
+      if (!e.data.data?.link) return;
+
+      const { searchParams, hash } = new URL(e.data.data?.link);
+      const sentState = localStorage.getItem("state");
+      if (sentState) {
+        const data = new URLSearchParams(hash.substring(1));
+        const state = data.get("state");
+        if (state !== sentState) {
+          rej("State doesn't match, aborting");
+        }
+
+        const token = data.get("access_token");
+        if (!token) {
+          rej("No token found in the SSO response");
+        }
+
+        if (token) {
+          validateToken(token)
+            .then((userId) => {
+              if (userId) {
+                res({ token, userId });
+              }
+            })
+            .catch((err) => rej(err));
+        } else {
+          if (searchParams.has("error")) {
+            rej(
+              `The SSO returned an error! Was it canceled? Error ${searchParams.get(
+                "error"
+              )}: ${searchParams.get("error_description")}`
+            );
+          }
+        }
+      } else {
+        rej("An error occured while validating, try reloading");
       }
+    });
+  });
 
-      const token = data.get("access_token");
-      if (!token) {
-        console.error("No token found in the SSO response");
-        return null;
-      }
+  app.append(link);
 
-      const userId = await validateToken(token);
-      if (userId) {
-        return { token, userId };
-      }
-    }
-  } else {
-    app?.append(getSSOLink(true));
+  const data = await promise;
+  handlerRef.current?.close();
+  app.removeChild(link);
 
-    if (searchParams.has("error")) {
-      console.error(
-        `The SSO returned an error! Was it canceled? Error ${searchParams.get(
-          "error"
-        )}: ${searchParams.get("error_description")}`
-      );
-
-      return null;
-    }
-  }
-
-  return null;
+  return data;
 }
 
 export async function getGlobalBadges(access_token: string, client_id: string) {

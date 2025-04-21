@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/webp" href="./peepoChat.webp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>👻🦴 + console = profit</title>
+    <script>
+      window.addEventListener("load", () => {
+        window.opener.postMessage({
+          type: "authorize_twitch",
+          data: { link: location.href },
+        });
+
+        const redirectText = document.querySelector("#redirect");
+        redirectText.removeAttribute("hidden");
+        const link = redirectText.querySelector("a");
+        link.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          window.close();
+        });
+      });
+    </script>
+  </head>
+
+  <body>
+    <div>Authorized succesfully</div>
+    <span hidden id="redirect">
+      This window will close automatically. If not, you can click
+      <a href="#">here</a> or close it yourself
+    </span>
+  </body>
+</html>

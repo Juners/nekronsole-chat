@@ -24,6 +24,11 @@ declare global {
     chat: ReturnType<typeof setupChat>;
   }
   interface Window {
+    Twitch: {
+      login: () => void;
+      logout: () => void;
+      Chat: Chat;
+    };
     Chat: Chat;
   }
   interface Chat {
@@ -43,6 +48,7 @@ function size2x(element: ImageHostFile) {
   return element.name === "2x";
 }
 
+// TODO: Use cookies instead of storage
 async function login() {
   console.log("Logging in...");
 
@@ -52,20 +58,39 @@ async function login() {
   const access_token = await getAccessToken(app);
   if (!access_token) return;
 
+  // Use a component for this maybe, adding both login and logout?
+  const logout = document.createElement("a");
+  logout.href = "#";
+  logout.addEventListener("click", () => window.Twitch?.logout());
+  logout.innerText = "Log out";
+  app.appendChild(logout);
+
   const { token, userId } = access_token;
   if (!(token && userId)) {
     console.error("An error occured, try reloading");
     return;
   }
 
-  console.log("Logged in");
-
   // TODO: Don't store it, simply request it again
   localStorage.setItem("access_token", token);
   // THis one is fine
   localStorage.setItem("user_id", userId);
 
+  console.log("Logged in");
+
   return access_token;
+}
+
+// TODO: Use cookies instead of storage
+async function logout() {
+  console.log("Logging out...");
+
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("user_id");
+
+  console.log("Logged out");
+
+  location.reload();
 }
 
 async function enterChat({
@@ -253,6 +278,14 @@ async function main() {
   if ("chat" in globalThis.console) {
     console.error("chat is already in use!");
   } else {
+    console.log(
+      "How to use this chat: " +
+        "\n1. Login with twitch by clicking on the html link 'login'. Alternatively, you can call Twitch.login(). If already logged in, your session will be used" +
+        "\n2. Connect to a chatroom by calling Chat.enter(streamer) or Twitch.Chat.enter(streamer). If already in a chat, you will leave that and enter this new one." +
+        "\n3. To leave to a chatroom, you can call Chat.leave() or Twitch.Chat.leave()"+
+        "\n4. To logout, you can click on 'logout' in the page or call Twitch.logout()"
+    );
+
     const data = await login();
     if (!data) {
       console.error("Error loging in");
@@ -262,7 +295,6 @@ async function main() {
     if (!window.Chat) {
       let chat_name: string | null = null;
       let leaveChat: (() => void) | undefined | null = null;
-
       window.Chat = {
         enter: function (streamer_name: string) {
           if (typeof streamer_name !== "string") {
@@ -295,6 +327,20 @@ async function main() {
         },
       };
     }
+
+    window.Twitch = {
+      login: () => {
+        const loginBtn: HTMLElement | null = document.querySelector("#login");
+        if (loginBtn) {
+          console.error(
+            "Couldn't find the login button. Try manually clicking it in the HTML"
+          );
+        }
+        loginBtn?.click();
+      },
+      logout,
+      Chat: window.Chat,
+    };
   }
 }
 
