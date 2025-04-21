@@ -1,14 +1,25 @@
+import { CheermoteTiersMap } from "@/index";
+
 declare global {
   interface Window {
     chrome?: unknown;
   }
 }
 
+const isLocalhost = location.hostname === "localhost";
+
 export interface EmoteData {
+  type: "emote";
   alias: string;
   image: {
     url: string;
   };
+}
+
+export interface CheermoteData {
+  type: "cheermote";
+  alias: string;
+  cheermote: { prefix: string; bits: number; tier: number };
 }
 
 export interface Config {
@@ -39,6 +50,7 @@ export const DEFAULT_CONFIG: Config = {
 export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
   emoteMap: EmoteMap,
   badgeMap: Map<string, Map<string, [string, string]>>,
+  cheermotesMap: Map<string, CheermoteTiersMap>,
   config: Config = DEFAULT_CONFIG
 ) {
   type emoteKey = keyof EmoteMap & string;
@@ -47,6 +59,8 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     name: string;
     ratio: number;
     str: string;
+    color?: string;
+    extraText?: string;
   };
 
   const SIZE = config.sizes.emote;
@@ -64,6 +78,7 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
   const cachedEmotes: Partial<Record<emoteKey, EmojiType>> = {};
   const cachedBadges = new Map<string, EmojiType>();
   const cachedTwitchEmotes = new Map<string, EmojiType>();
+  const cachedCheermotes = new Map<string, EmojiType>();
 
   // let biggestHeight = SIZE;
 
@@ -127,9 +142,9 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
     const sizeStr =
       browser === "chromium"
-        ? `padding-top: ${height / 2 + height / 4}px; padding-bottom: ${
+        ? `padding-top: ${height * 0.75}px; padding-bottom: ${
             height / 2
-          }px; padding-left: ${width}px; `
+          }px; padding-left: ${width + 2}px; `
         : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
 
     const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
@@ -181,13 +196,52 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     return cached;
   }
 
+  async function getCheermote({
+    alias,
+    cheermote,
+  }: CheermoteData): Promise<EmojiType | undefined> {
+    const prefix = cheermote.prefix.toLowerCase(); // .toLowerCase() since I don't trust twitch API anymore after cheermotes
+    const key = prefix + cheermote.tier; // The alias here is too dynamic to use as the cache key, so we use the prefix plus tier instead
+    let cached = cachedCheermotes.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const image = cheermotesMap.get(prefix)?.get(cheermote.tier.toString());
+
+    if (!image) return;
+
+    const { width, height, base64: objectUrl } = await getImage(image[1]);
+    const url = objectUrl;
+
+    const sizeStr =
+      browser === "chromium"
+        ? `padding-top: ${height / 2 + height / 4}px; padding-bottom: ${
+            height / 2
+          }px; padding-left: ${width}px; `
+        : `display: inline-flex; height: ${height}px; width: ${width + 10}px; `;
+
+    const str = `color:transparent; font-size: 0px; ${sizeStr}; background: url('${url}'); background-size: ${width}px; background-repeat: no-repeat;`;
+
+    cached = {
+      name: alias,
+      ratio: 1,
+      str,
+      extraText: cheermote.bits.toString(),
+    };
+
+    cachedCheermotes.set(key, cached);
+
+    return cached;
+  }
+
   // TODO: Since is async, use a queue instead
   return async function chat({
     message,
     from,
     time,
   }: {
-    message: (string | EmoteData)[];
+    message: (string | EmoteData | CheermoteData)[];
     from?: {
       name: string;
       color?: string;
@@ -201,54 +255,72 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
     // }
 
     const format = [];
-    const msgs: (string[] | Pick<EmojiType, "name">)[] = [];
+    const msgs: (string | string[] | Pick<EmojiType, "name">)[] = [];
 
     if (time) {
       format.push("%c%s%c");
-      const colorStyle = "color: rgb(167 167 167);";
+      const colorStyle = "color: rgb(167 167 167); padding-right: 1px;";
       const timeStr = new Date(time).toLocaleTimeString(undefined, {
         hour: "2-digit",
         minute: "2-digit",
       });
-      msgs.push([BASE_CSS + colorStyle], [`[${timeStr}]`], [BASE_CSS]);
+      msgs.push(BASE_CSS + colorStyle, [`[${timeStr}]`], BASE_CSS);
     }
 
-    if (from) {
+    if (from && from.name) {
       for (const { set_id, id } of from.badges || []) {
-        const badge = await getBadge(set_id, id);
+        const badge = await getBadge(set_id.toLowerCase(), id); // .toLowerCase() since I don't trust twitch API anymore after cheermotes
         if (badge) {
-          format.push("%c%s%c");
-          msgs.push([badge.str], { name: badge.name }, [BASE_CSS]);
+          format.push("%c%s");
+          msgs.push(badge.str, { name: badge.name });
         }
       }
 
       format.push("%c%s%c%s");
       const colorStyle = from.color ? `color: ${from.color};` : "";
-      msgs.push([BASE_CSS + colorStyle], [from.name], [BASE_CSS], [":"]);
+      msgs.push(BASE_CSS + colorStyle, [from.name], BASE_CSS, [":"]);
     }
 
-    async function addToMessage(toRender: string | EmojiType) {
+    async function addToMessage(
+      toRender: string | EmojiType,
+      forceNew = false
+    ) {
       if (typeof toRender !== "string") {
-        format.push("%c%s%c");
-        msgs.push([toRender.str], { name: toRender.name });
+        let formatStr = "%c%s";
+        if (toRender.extraText) {
+          formatStr += "%c%s";
+        }
+        format.push(formatStr);
+        msgs.push(toRender.str, { name: toRender.name });
+        if (toRender.extraText) {
+          msgs.push(toRender.color ? `color: ${toRender.color};` : BASE_CSS, [
+            toRender.extraText,
+          ]);
+        }
       } else {
         let last = msgs.pop();
-        if (!last || !Array.isArray(last)) {
-          if (last && !Array.isArray(last)) msgs.push(last);
+        if (!Array.isArray(last)) {
+          if (last) msgs.push(last);
 
           format.push("%c%s");
-          msgs.push([BASE_CSS], [""]);
+          msgs.push(BASE_CSS);
           last = [];
         }
 
         last.push(toRender || "");
         msgs.push(last);
+
+        // TODO: Do this cleaner by using tokens instead of this weird ass arrays
+        if (forceNew) {
+          format.push("%c%s");
+          msgs.push(BASE_CSS, []);
+        }
       }
     }
 
     async function extractEmoteFromWord(word: string) {
       let emoji;
-      if (word in emoteMap) {
+      if (word && word in emoteMap) {
         emoji = await getEmoji(word);
       }
 
@@ -257,26 +329,44 @@ export function setupChat<EmoteMap extends { [key: string]: EmoteData }>(
 
     for (const fragment of message) {
       if (typeof fragment === "string") {
-        for (const word of fragment.split(" ")) {
+        const words = fragment.split(" ");
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
           const emoji = await extractEmoteFromWord(word);
           await addToMessage(emoji ?? word);
         }
       } else {
-        let emoji = await getTwitchEmote(fragment);
+        let emoji;
+        if (fragment.type === "emote") {
+          emoji = await getTwitchEmote(fragment);
+        } else if (fragment.type === "cheermote" && !isLocalhost) {
+          // Bullshit cashgrab cheers don't work on localhost because of AWS CDN blocking it
+          emoji = await getCheermote(fragment);
+        }
+
         if (!emoji) {
           emoji = await extractEmoteFromWord(fragment.alias);
         }
 
-        await addToMessage(emoji ?? fragment.alias);
+        await addToMessage(emoji ?? fragment.alias, !emoji);
       }
     }
 
+    // TODO: Trailing strings are being parsed out
     const finalArr = msgs.map(
-      (x) => (Array.isArray(x) ? x.join(" ") : x.name)
+      (x) => {
+        if (typeof x === "string") {
+          return x;
+        } else if (Array.isArray(x)) {
+          return x.join(" ");
+        } else {
+          return x.name;
+        }
+      }
       // : new Array(Math.ceil((SIZE * x.ratio) / SIZE_SPACE) + 1).join(" ")
     );
 
-    console.log(format.join(" "), ...finalArr);
+    console.log(format.join(""), ...finalArr);
   };
 }
 

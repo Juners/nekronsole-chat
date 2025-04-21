@@ -1,7 +1,7 @@
 /**
  * This file was generated with GitHub Copilot on 20/04/2025.
  *
- * Manually adjusted on 20/04/2025.
+ * Manually adjusted on 21/04/2025.
  */
 
 /** */
@@ -73,17 +73,13 @@ export interface GlobalChatBadgesResponse {
 
 export enum ResponseCode {
   /**
-   * OK
-   *
    * Successfully retrieved the list of global chat badges.
    */
-  200,
+  OK = 200,
   /**
-   * Unauthorized
-   *
    * * The Authorization header is required and must specify a valid app access token or user access token.
    * * The OAuth token is not valid.
    * * The ID in the Client-Id header must match the Client ID in the OAuth token.
    */
-  401,
+  Unauthorized = 401,
 }

@@ -5,10 +5,15 @@ import {
 import {
   getAccessToken,
   getChatBadges,
+  getCheermotes,
   getGlobalBadges,
   getUserData,
 } from "./lib/integrations/twitch/api";
-import { EmoteData, setupChat } from "./lib/renders/chat-render";
+import {
+  Cheermote,
+  CheermoteTier,
+} from "./lib/integrations/twitch/twitchCheermotes";
+import { setupChat } from "./lib/renders/chat-render";
 
 import { setup } from "./main";
 
@@ -27,9 +32,12 @@ declare global {
   }
 }
 
-const devMode = false;
+export type CheermoteTiersMap = Map<
+  CheermoteTier["id"],
+  [CheermoteTier["color"], string]
+>;
 
-const badgesMap = new Map<string, Map<string, [string, string]>>();
+const devMode = false;
 
 function size2x(element: ImageHostFile) {
   return element.name === "2x";
@@ -87,18 +95,23 @@ async function enterChat({
 
   const emojis = await getEmotesetFrom7tv(broadcaster_id);
 
-  const emoteSetTransformed = Object.fromEntries(
+  // TODO: Type this so TS doesn't complain further down
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const emoteSetTransformed: any = Object.fromEntries(
     Array.from(emojis.values(), function (v) {
       const file = v.files.find(size2x) ?? v.files[0];
       return [
         v.alias,
         {
+          type: "emote",
           alias: v.alias,
           image: { url: `https:${v.url}/${file.name}` },
         },
       ];
     })
   );
+
+  const badgesMap = new Map<string, Map<string, [string, string]>>();
 
   const globalBadges = await getGlobalBadges(access_token, client_id);
   if (globalBadges) {
@@ -112,7 +125,7 @@ async function enterChat({
         versionMap.set(version.id, [version.title, version.image_url_1x]);
       }
 
-      badgesMap.set(badge.set_id, versionMap);
+      badgesMap.set(badge.set_id.toLowerCase(), versionMap);
     }
   }
 
@@ -135,8 +148,28 @@ async function enterChat({
       badgesMap.set(badge.set_id, versionMap);
     }
   }
+  const cheermotesMap = new Map<Cheermote["prefix"], CheermoteTiersMap>();
 
-  const chat = setupChat(emoteSetTransformed, badgesMap);
+  const cheermotes = await getCheermotes(
+    access_token,
+    client_id,
+    broadcaster_id
+  );
+  if (cheermotes) {
+    for (let i = 0; i < cheermotes.length; i++) {
+      const cheermote = cheermotes[i];
+
+      const cheermoteTiers: CheermoteTiersMap = new Map();
+      for (let j = 0; j < cheermote.tiers.length; j++) {
+        const tier = cheermote.tiers[j];
+        cheermoteTiers.set(tier.id, [tier.color, tier.images.dark.animated[1]]);
+      }
+
+      cheermotesMap.set(cheermote.prefix.toLowerCase(), cheermoteTiers);
+    }
+  }
+
+  const chat = setupChat(emoteSetTransformed, badgesMap, cheermotesMap);
 
   console.chat = chat;
 
@@ -169,22 +202,30 @@ function startListening({
   });
 
   eventBus.addEventListener("message", ({ detail }) => {
-    // console.log(detail);
-    // TODO: Do a bit of parsing
-    const msg = detail.message.fragments
-      .filter(({ type }) => ["text", "emote"].includes(type))
-      .map(({ type, text, emote }) => {
-        if (type === "text") {
-          return text as string;
-        } else if (type === "emote") {
-          return {
-            alias: text,
-            image: {
-              url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark`,
-            },
-          } as EmoteData;
-        }
-      });
+    const fragments = [];
+    for (const fragment of detail.message.fragments) {
+      const { text, type } = fragment;
+      if (type === "text") {
+        fragments.push(text);
+      } else if (type === "emote") {
+        const emote = fragment.emote;
+        const part = {
+          type,
+          alias: text,
+          image: {
+            url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark`,
+          },
+        };
+        fragments.push(part);
+      } else if (type === "cheermote") {
+        const part = {
+          type,
+          alias: text,
+          cheermote: fragment.cheermote,
+        };
+        fragments.push(part);
+      }
+    }
 
     const obj = {
       from: {
@@ -193,7 +234,7 @@ function startListening({
         badges: detail.badges,
       },
       time: detail.timestamp,
-      message: msg,
+      message: fragments,
     };
 
     console.chat(obj);

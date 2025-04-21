@@ -3,6 +3,7 @@ import {
   BroadcasterChatBadgesResponse,
 } from "./twitchBroadcasterChatBadges";
 import { GlobalChatBadgesResponse } from "./twitchChatBadges";
+import { GetCheermotesRequest, GetCheermotesResponse } from "./twitchCheermotes";
 
 function getSSOLink(forceVerify = false) {
   const state = crypto.randomUUID();
@@ -234,6 +235,38 @@ export async function getChannelData(
     return channels.data[0];
   } catch (e) {
     console.error("An error occured while getting the channel data", e);
+    return null;
+  }
+}
+
+export async function getCheermotes(
+  access_token: string,
+  client_id: string,
+  broadcaster_id?: string
+) {
+  try {
+    const request: GetCheermotesRequest = broadcaster_id
+      ? {
+          broadcaster_id,
+        }
+      : {};
+
+    const params = new URLSearchParams(Object.entries(request));
+    const response = await fetch(
+      `https://api.twitch.tv/helix/bits/cheermotes?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+          "Client-Id": client_id,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    const cheermotes: GetCheermotesResponse = await response.json();
+
+    return cheermotes.data;
+  } catch (e) {
+    console.error("An error occured while getting the cheermotes data", e);
     return null;
   }
 }
